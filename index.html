@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Damas</title>
+<style>
+:root{--bg:#f6f1e7;--fg:#2b2118;--card:#fffaf0;--ln:#d9cdb8;--lt:#f0d9b5;--dk:#a9714b;--w:#fdfaf3;--b:#2a2522;--ac:#c2410c;--hl:rgba(250,204,21,.8);--mv:rgba(34,197,94,.75);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1713;--fg:#f3eadb;--card:#2a221b;--ln:#4a3d30;--lt:#c9a36f;--dk:#7a4a2c;--w:#f3ede0;--b:#15110e}}
+:root[data-theme="dark"]{--bg:#1c1713;--fg:#f3eadb;--card:#2a221b;--ln:#4a3d30;--lt:#c9a36f;--dk:#7a4a2c;--w:#f3ede0;--b:#15110e}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{max-width:520px;margin:0 auto;padding:14px 12px 28px}
+h1{text-align:center;margin:8px 0 14px;font-size:30px}
+h2{margin:6px 0 10px;font-size:20px}
+button,input{font:inherit;color:inherit}
+button{touch-action:manipulation}
+.big{display:block;width:100%;margin:10px 0;padding:15px;border-radius:14px;border:1px solid var(--ln);background:var(--card);font-size:17px;font-weight:600;text-align:left}
+.big:active{transform:scale(.98)}
+.big:disabled{opacity:.45}
+.sm{padding:10px 14px;border-radius:10px;border:1px solid var(--ln);background:var(--card);font-weight:600}
+.pri{background:var(--ac);color:#fff;border-color:var(--ac)}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:12px;margin:10px 0}
+.card label{display:block;font-size:13px;opacity:.7;margin-bottom:4px}
+input,select{width:100%;padding:11px;border-radius:10px;border:1px solid var(--ln);background:var(--bg)}
+.note{font-size:13px;opacity:.7;text-align:center}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+#hd{text-align:center;font-weight:700;margin:4px 0 8px;min-height:44px}
+#hd small{display:block;font-weight:400;opacity:.7}
+.board{display:grid;grid-template-columns:repeat(8,1fr);width:100%;aspect-ratio:1;border:4px solid var(--dk);border-radius:8px;overflow:hidden;position:relative}
+.cell{position:relative;display:grid;place-items:center;background:var(--lt)}
+.cell.d{background:var(--dk)}
+.cell.last{box-shadow:inset 0 0 0 3px rgba(56,189,248,.75)}
+.cell.sel{box-shadow:inset 0 0 0 4px var(--hl)}
+.cell.dst::after{content:"";position:absolute;width:30%;height:30%;border-radius:50%;background:var(--mv)}
+.p{width:78%;height:78%;border-radius:50%;display:grid;place-items:center;font-size:clamp(14px,5.5vw,28px);box-shadow:0 2px 4px rgba(0,0,0,.45);line-height:1}
+.p.w{background:radial-gradient(circle at 35% 30%,#fff,var(--w) 55%,#d4c9b2);color:#a16207}
+.p.k{background:radial-gradient(circle at 35% 30%,#6a5f58,var(--b) 60%,#000);color:#facc15}
+#ft{display:flex;gap:8px;margin-top:12px}
+#ft>*{flex:1}
+.ov{position:absolute;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;color:#fff;text-align:center;padding:16px}
+.ov b{font-size:26px;display:block;margin-bottom:12px}
+.ov .row{justify-content:center}
+table{width:100%;border-collapse:collapse}
+td,th{padding:8px 6px;text-align:left;border-bottom:1px solid var(--ln)}
+th{font-size:12px;opacity:.7}
+tr.me{background:rgba(250,204,21,.25);font-weight:700}
+.lv{display:flex;justify-content:space-between;align-items:center}
+.lv span{font-weight:400;font-size:13px;opacity:.7}
+</style></head><body>
+<div id="app"></div>
+<script src="firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const $=s=>document.querySelector(s),A=$('#app'),D4=[[-1,-1],[-1,1],[1,-1],[1,1]],sg=Math.sign;
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let db=null,uid=null,nick='',G=null,clk=0,aiColor=1;
+try{nick=localStorage.getItem('nick')||''}catch(e){}
+const myName=()=>nick||'Jugador';
+(async()=>{try{const cfg=window.FIREBASE_CONFIG;if(cfg&&cfg.apiKey&&window.firebase){firebase.initializeApp(cfg);const u=await firebase.auth().signInAnonymously();uid=u.user.uid;db=firebase.firestore()}}catch(e){console.error(e)}
+ if(!G&&!document.querySelector('#bd'))menu()})();
+
+/* ---------- Reglas (damas españolas: damas voladoras, captura obligatoria y mayoritaria) ---------- */
+const ok=(r,c)=>r>=0&&r<8&&c>=0&&c<8;
+function newBoard(){const b=Array.from({length:8},()=>Array(8).fill(0));for(let r=0;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2){if(r<3)b[r][c]=-1;else if(r>4)b[r][c]=1}return b}
+function jumps(b,r,c,s,king,caps,path,out){
+ let found=false;const dirs=king?D4:[[-s,-1],[-s,1]];
+ for(const[dr,dc]of dirs){
+  let rr=r+dr,cc=c+dc;
+  if(king)while(ok(rr,cc)&&b[rr][cc]==0){rr+=dr;cc+=dc}
+  if(!ok(rr,cc))continue;
+  const v=b[rr][cc];
+  if(v==0||sg(v)==s||caps.some(p=>p[0]==rr&&p[1]==cc))continue;
+  let lr=rr+dr,lc=cc+dc;
+  while(ok(lr,lc)&&b[lr][lc]==0){
+   found=true;
+   jumps(b,lr,lc,s,king,[...caps,[rr,cc]],[...path,[lr,lc]],out);
+   if(!king)break;lr+=dr;lc+=dc;
+  }
+ }
+ if(!found&&caps.length)out.push({path,caps});
+}
+function legal(b,s){
+ const caps=[],quiet=[];
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  const v=b[r][c];if(!v||sg(v)!=s)continue;const king=Math.abs(v)==2;
+  b[r][c]=0;jumps(b,r,c,s,king,[],[[r,c]],caps);b[r][c]=v;
+  for(const[dr,dc]of king?D4:[[-s,-1],[-s,1]]){
+   let rr=r+dr,cc=c+dc;
+   while(ok(rr,cc)&&b[rr][cc]==0){quiet.push({path:[[r,c],[rr,cc]],caps:[]});if(!king)break;rr+=dr;cc+=dc}
+  }
+ }
+ if(caps.length){const m=Math.max(...caps.map(x=>x.caps.length));return caps.filter(x=>x.caps.length==m)}
+ return quiet;
+}
+function apply(b,m){
+ const nb=b.map(r=>r.slice()),[r0,c0]=m.path[0],[r1,c1]=m.path[m.path.length-1];let v=nb[r0][c0];
+ nb[r0][c0]=0;m.caps.forEach(([r,c])=>nb[r][c]=0);
+ if(v==1&&r1==0)v=2;if(v==-1&&r1==7)v=-2;nb[r1][c1]=v;return nb;
+}
+
+/* ---------- Máquina ---------- */
+function evalB(b){let s=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++){const v=b[r][c];if(!v)continue;const a=Math.abs(v),k=sg(v);let x=a==2?320:100;
+ if(a==1){x+=(k==1?7-r:r)*4;if((k==1&&r==7)||(k==-1&&r==0))x+=6}
+ if(c==0||c==7)x+=3;s+=k*x}return s}
+function mm(b,s,d,al,be){
+ const ms=legal(b,s);
+ if(!ms.length)return s==1?-1e5-d:1e5+d;
+ if(d<=0&&(d<-3||!ms[0].caps.length))return evalB(b);
+ let best=s==1?-Infinity:Infinity;
+ for(const m of ms){
+  const v=mm(apply(b,m),-s,d-1,al,be);
+  if(s==1){if(v>best)best=v;if(best>al)al=best}else{if(v<best)best=v;if(best<be)be=best}
+  if(be<=al)break;
+ }
+ return best;
+}
+function pick(b,s,lv){
+ const ms=legal(b,s);if(ms.length<2)return ms[0];
+ ms.sort(()=>Math.random()-.5);
+ if(lv==0)return ms[0];
+ const d=lv==1?3:6;let best=null,bv=-Infinity;
+ for(const m of ms){const v=s*mm(apply(b,m),-s,d-1,-Infinity,Infinity);if(v>bv){bv=v;best=m}}
+ return best;
+}
+function aiMove(){const g=G;setTimeout(()=>{if(G!==g||g.over)return;const m=pick(g.board,g.turn,g.level);if(m)doMove(m)},400)}
+
+/* ---------- Ranking ---------- */
+async function addResult(win,pts){
+ if(!db||!uid)return;
+ try{const ref=db.doc('ranking/'+uid),s=await ref.get(),d=s.exists?s.data():{};
+  await ref.set({name:myName(),points:Math.max(0,(d.points||0)+pts),wins:(d.wins||0)+(win==1?1:0),losses:(d.losses||0)+(win==-1?1:0),draws:(d.draws||0)+(win==0?1:0)})}catch(e){}
+}
+function ranked(g){
+ if(g.ranked||g.mode=='local')return;g.ranked=true;
+ const w=g.winner;
+ if(g.mode=='ai')addResult(w==0?0:w==g.me?1:-1,w==g.me?[1,2,3][g.level]:0);
+ else addResult(w==0?0:w==g.me?1:-1,w==0?1:w==g.me?5:-2);
+}
+async function rankView(){
+ A.innerHTML='<h2>🏆 Ranking</h2><p class="note">Cargando…</p>';
+ let rows=[];
+ try{const s=await db.collection('ranking').orderBy('points','desc').limit(30).get();rows=s.docs.map(d=>({id:d.id,...d.data()}))}catch(e){}
+ A.innerHTML='<h2>🏆 Ranking</h2><div class="card">'+(rows.length?'<table><tr><th>#</th><th>Jugador</th><th>Pts</th><th>V/D/T</th></tr>'+rows.map((r,i)=>`<tr class="${r.id==uid?'me':''}"><td>${i+1}</td><td>${esc(r.name)}</td><td>${r.points||0}</td><td>${r.wins||0}/${r.losses||0}/${r.draws||0}</td></tr>`).join('')+'</table>':'<p class="note">Aún no hay partidas puntuadas.</p>')+'</div><p class="note">Máquina: +1 / +2 / +3 por ganar (fácil/medio/difícil). Online: +5 ganar, +1 tablas, −2 perder.</p><button class="big" onclick="menu()">← Volver</button>';
+}
+
+/* ---------- Vistas ---------- */
+function menu(){
+ stop();G=null;
+ A.innerHTML=`<h1>♛ Damas</h1><div class="card"><label>Tu apodo (para ranking y online)</label><input id="nick" maxlength="16" placeholder="Jugador" value="${esc(nick)}"></div>
+ <div class="card"><label>Reloj por jugada</label><select id="clk" onchange="clk=+this.value">${[[0,'Sin reloj'],[15,'15 s'],[30,'30 s'],[60,'60 s'],[120,'2 min']].map(([v,l])=>`<option value="${v}" ${clk==v?'selected':''}>${l}</option>`).join('')}</select></div>
+ <button class="big" onclick="aiSetup()">🤖 Contra la máquina</button>
+ <button class="big" onclick="startGame({mode:'local'})">👥 Dos jugadores (mismo móvil)</button>
+ <button class="big" onclick="onlineView()" ${db?'':'disabled'}>🌐 Jugar online</button>
+ <button class="big" onclick="rankView()" ${db?'':'disabled'}>🏆 Ranking</button>
+ ${db?'':'<p class="note">Online y ranking no están activos: falta configurar firebase-config.js (mira el README).</p>'}
+ <p class="note">Damas españolas: captura obligatoria y mayoritaria, damas voladoras.</p>`;
+ $('#nick').oninput=e=>{nick=e.target.value.trim();try{localStorage.setItem('nick',nick)}catch(_){}};
+}
+function setC(c){aiColor=c;$('#cw').classList.toggle('pri',c==1);$('#cb').classList.toggle('pri',c==-1)}
+function aiSetup(){
+ A.innerHTML=`<h2>🤖 Elige dificultad</h2><div class="row"><button id="cw" class="sm ${aiColor==1?'pri':''}" onclick="setC(1)">⚪ Blancas</button><button id="cb" class="sm ${aiColor==-1?'pri':''}" onclick="setC(-1)">⚫ Negras</button></div><p class="note">Las blancas empiezan.</p>
+ <button class="big lv" onclick="startGame({mode:'ai',level:0,me:aiColor})">🟢 Fácil <span>mueve al azar</span></button>
+ <button class="big lv" onclick="startGame({mode:'ai',level:1,me:aiColor})">🟡 Medio <span>piensa 3 jugadas</span></button>
+ <button class="big lv" onclick="startGame({mode:'ai',level:2,me:aiColor})">🔴 Difícil <span>piensa 6 jugadas</span></button>
+ <button class="big" onclick="menu()">← Volver</button>`;
+}
+async function onlineView(){
+ A.innerHTML=`<h2>🌐 Online</h2>
+ <button class="big pri" onclick="createGame()">➕ Crear partida</button>
+ <div class="card"><label>Unirse con código</label><div class="row"><input id="code" maxlength="4" placeholder="ABCD" style="text-transform:uppercase"><button class="sm" onclick="joinGame($('#code').value)">Unirse</button></div></div>
+ <div class="card"><div class="lv"><b>Partidas abiertas</b><button class="sm" onclick="onlineView()">↻</button></div><div id="open" class="note">Buscando…</div></div>
+ <button class="big" onclick="menu()">← Volver</button>`;
+ try{
+  const s=await db.collection('games').where('status','==','waiting').limit(15).get();
+  const L=s.docs.map(d=>({id:d.id,...d.data()})).filter(g=>g.white!=uid&&g.created>Date.now()-36e5);
+  const el=$('#open');if(!el)return;
+  el.className='';el.innerHTML=L.length?L.map(g=>`<button class="big" onclick="joinGame('${esc(g.id)}')">${esc(g.whiteName)} <span style="opacity:.6;font-weight:400">· ${esc(g.id)}</span></button>`).join(''):'<span class="note">No hay ninguna ahora mismo.</span>';
+ }catch(e){const el=$('#open');if(el)el.textContent='No se pudo cargar la lista.'}
+}
+async function createGame(){
+ const code=Array.from({length:4},()=>'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.random()*31|0]).join('');
+ try{await db.doc('games/'+code).set({white:uid,whiteName:myName(),black:null,blackName:'',board:JSON.stringify(newBoard()),turn:1,last:'[]',half:0,status:'waiting',winner:null,created:Date.now(),clk})}catch(e){alert('No se pudo crear la partida.');return}
+ startGame({mode:'online',code,me:1});
+}
+async function joinGame(code){
+ code=(code||'').trim().toUpperCase();if(!code)return;
+ try{
+  const ref=db.doc('games/'+code),s=await ref.get();
+  if(!s.exists){alert('No existe esa partida.');return}
+  const d=s.data();
+  if(d.white==uid)return startGame({mode:'online',code,me:1});
+  if(d.black==uid)return startGame({mode:'online',code,me:-1});
+  if(d.black||d.status!='waiting'){alert('La partida ya está completa.');return}
+  await ref.update({black:uid,blackName:myName(),status:'playing'});
+  startGame({mode:'online',code,me:-1});
+ }catch(e){alert('No se pudo unir.')}
+}
+function stop(){if(G&&G.unsub){G.unsub();G.unsub=null}}
+function startGame(o){
+ stop();
+ G={mode:o.mode,clk:o.mode=='online'?0:clk,hist:[],level:o.level||0,me:o.me||1,code:o.code,board:newBoard(),turn:1,over:false,winner:null,last:[],sel:null,half:0,names:{1:'Blancas','-1':'Negras'},status:'playing'};
+ A.innerHTML='<div id="hd"></div><div id="bd" class="board"></div><div id="ft"></div>';
+ $('#bd').onclick=e=>{const c=e.target.closest('.cell');if(c)onCell(+c.dataset.r,+c.dataset.c)};
+ if(G.mode=='online'){
+  G.status='waiting';const g=G;
+  g.unsub=db.doc('games/'+g.code).onSnapshot(s=>{
+   if(G!==g||!s.exists)return;const d=s.data();
+   const nb=JSON.parse(d.board);if(JSON.stringify(nb)!=JSON.stringify(g.board))g.sel=null;
+   g.board=nb;g.turn=d.turn;g.half=d.half||0;g.last=JSON.parse(d.last||'[]');g.status=d.status;g.clk=d.clk||0;
+   g.names={1:d.whiteName||'Blancas','-1':d.blackName||'Rival'};
+   if(d.status=='done'){g.over=true;g.winner=d.winner;ranked(g)}
+   draw();
+  },()=>{});
+ }
+ draw();
+ if(G.mode=='ai'&&G.turn!=G.me)aiMove();
+}
+function exit(){
+ const g=G;
+ if(g&&g.mode=='online'&&g.status=='waiting'&&g.me==1)try{db.doc('games/'+g.code).delete()}catch(e){}
+ menu();
+}
+function resign(){
+ const g=G;if(!g||g.over||!confirm('¿Seguro que quieres rendirte?'))return;
+ if(g.mode=='online'){db.doc('games/'+g.code).update({status:'done',winner:-g.me}).catch(()=>{});return}
+ g.over=true;g.winner=g.mode=='ai'?-g.me:-g.turn;ranked(g);draw();
+}
+function count(b,s){let n=0;b.forEach(r=>r.forEach(v=>{if(sg(v)==s)n++}));return n}
+function draw(){
+ const g=G;if(!g||!$('#bd'))return;
+ const ms=g.over||g.status=='waiting'?[]:legal(g.board,g.turn);
+ const mine=g.mode=='local'||g.turn==g.me;
+ let t;
+ if(g.mode=='online'&&g.status=='waiting')t=`Esperando rival…<small>Código: <b style="font-size:22px;letter-spacing:3px">${esc(g.code)}</b></small>`;
+ else if(g.mode=='local')t=g.turn==1?'Turno de las blancas ⚪':'Turno de las negras ⚫';
+ else if(g.mode=='ai')t=mine?'Tu turno':'La máquina piensa…';
+ else t=mine?'Tu turno':`Turno de ${esc(g.names[g.turn])}`;
+ if(!g.over&&ms.length&&ms[0].caps.length&&(mine&&g.status!='waiting'))t+='<small>Captura obligatoria</small>';
+ else if(g.mode=='online'&&g.status!='waiting')t+=`<small>${esc(g.names[g.me])} (tú) vs ${esc(g.names[-g.me])}</small>`;
+ if(g.clk&&!g.over&&g.status!='waiting')t+='<small id="ck"></small>';
+ $('#hd').innerHTML=t;tick();
+ const flip=g.mode!='local'&&g.me==-1,dst=new Set();
+ if(g.sel&&mine&&!g.over)ms.filter(m=>m.path[0][0]==g.sel[0]&&m.path[0][1]==g.sel[1]).forEach(m=>{const e=m.path[m.path.length-1];dst.add(e[0]+','+e[1])});
+ const lastS=new Set(g.last.map(p=>p[0]+','+p[1]));
+ let h='';
+ for(let i=0;i<64;i++){
+  const r=flip?7-(i>>3):i>>3,c=flip?7-i%8:i%8,v=g.board[r][c],k=r+','+c;
+  h+=`<div class="cell ${(r+c)%2?'d':''} ${lastS.has(k)?'last':''} ${g.sel&&g.sel[0]==r&&g.sel[1]==c?'sel':''} ${dst.has(k)?'dst':''}" data-r="${r}" data-c="${c}">${v?`<div class="p ${v>0?'w':'k'}">${Math.abs(v)==2?'♛':''}</div>`:''}</div>`;
+ }
+ if(g.over){
+  const w=g.winner;
+  const txt=w==0?'Tablas 🤝':g.mode=='local'?(w==1?'¡Ganan las blancas!':'¡Ganan las negras!'):(w==g.me?'¡Has ganado! 🎉':'Has perdido 😕');
+  h+=`<div class="ov"><div><b>${txt}</b><div class="row">${g.mode=='online'?'':'<button class="sm pri" onclick="startGame({mode:G.mode,level:G.level,me:G.me})">Otra vez</button>'}<button class="sm" onclick="exit()">Menú</button></div></div></div>`;
+ }
+ $('#bd').innerHTML=h;
+ $('#ft').innerHTML=`<button class="sm" onclick="exit()">← Menú</button>${!g.over&&g.hist.length&&g.mode!='online'&&(g.mode=='local'||g.turn==g.me)?'<button class="sm" onclick="undo()">↩ Deshacer</button>':''}${g.over||g.status=='waiting'?'':'<button class="sm" onclick="resign()">🏳 Rendirse</button>'}<div class="note" style="align-self:center">⚪ ${count(g.board,1)} · ⚫ ${count(g.board,-1)}</div>`;
+}
+function onCell(r,c){
+ const g=G;if(!g||g.over||g.status=='waiting')return;
+ if(g.mode=='ai'&&g.turn!=g.me)return;
+ if(g.mode=='online'&&g.turn!=g.me)return;
+ const ms=legal(g.board,g.turn);
+ if(g.sel){
+  const m=ms.find(m=>m.path[0][0]==g.sel[0]&&m.path[0][1]==g.sel[1]&&m.path[m.path.length-1][0]==r&&m.path[m.path.length-1][1]==c);
+  if(m)return doMove(m);
+ }
+ g.sel=ms.some(m=>m.path[0][0]==r&&m.path[0][1]==c)?[r,c]:null;
+ draw();
+}
+function doMove(m){
+ const g=G,[r0,c0]=m.path[0],v=g.board[r0][c0];
+ g.hist.push({board:g.board,turn:g.turn,half:g.half,last:g.last});
+ g.board=apply(g.board,m);g.last=m.path;g.sel=null;
+ g.half=(m.caps.length||Math.abs(v)==1)?0:g.half+1;
+ const mover=g.turn;g.turn=-g.turn;
+ let w=null;
+ if(!legal(g.board,g.turn).length)w=mover;else if(g.half>=50)w=0;
+ if(w!==null){g.over=true;g.winner=w}
+ if(g.mode=='online')db.doc('games/'+g.code).update({board:JSON.stringify(g.board),turn:g.turn,last:JSON.stringify(g.last),half:g.half,status:w!==null?'done':'playing',winner:w}).catch(()=>{});
+ else if(g.over)ranked(g);
+ draw();
+ if(!g.over&&g.mode=='ai'&&g.turn!=g.me)aiMove();
+}
+function undo(){
+ const g=G;if(!g||g.over||g.mode=='online'||!g.hist.length)return;
+ let i=g.hist.length-1;
+ if(g.mode=='ai'){if(g.turn!=g.me)return;i=g.hist.map(h=>h.turn).lastIndexOf(g.me);if(i<0)return}
+ const s=g.hist[i];g.hist.length=i;
+ Object.assign(g,{board:s.board,turn:s.turn,half:s.half,last:s.last,sel:null,tk:null});draw();
+}
+function tick(){
+ const g=G;if(!g||!g.clk||g.over||g.status=='waiting')return;
+ const k=g.turn+'|'+g.status;if(g.tk!==k){g.tk=k;g.t0=Date.now()}
+ const left=g.clk-(Date.now()-g.t0)/1000,hum=g.mode=='local'||g.turn==g.me,el=$('#ck');
+ if(el)el.textContent=(g.mode=='ai'&&!hum)?'':'⏱ '+Math.max(0,Math.ceil(left))+' s';
+ if(left<=0&&(g.mode=='local'||(g.mode=='ai'&&hum)||(g.mode=='online'&&(hum||left<=-4))))timeout(g);
+}
+function timeout(g){
+ g.over=true;g.winner=-g.turn;
+ if(g.mode=='online')db.doc('games/'+g.code).update({status:'done',winner:g.winner}).catch(()=>{});else ranked(g);
+ draw();
+}
+setInterval(tick,250);
+menu();
+</script></body></html>
